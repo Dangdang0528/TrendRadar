@@ -1,0 +1,86 @@
+# coding=utf-8
+"""NewsRadar Docker Compose
+
+启动方式(在 /workspace 目录执行,build context 是 /workspace):
+  docker compose -f newsradar/docker-compose.yml up --build
+
+服务:
+  - api:    FastAPI 应用 (端口 8000)
+  - worker: Arq worker (后续阶段启用)
+  - db:     PostgreSQL 16
+  - redis:  Redis 7
+"""
+services:
+  api:
+    build:
+      context: ..            # build context = /workspace,这样 Dockerfile 能 COPY trendradar/
+      dockerfile: newsradar/Dockerfile
+    image: newsradar:dev
+    container_name: newsradar-api
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://newsradar:newsradar@db:5432/newsradar
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    # 自动跑迁移再启动
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: newsradar/Dockerfile
+    image: newsradar:dev
+    container_name: newsradar-worker
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://newsradar:newsradar@db:5432/newsradar
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    # 阶段 2 启用 arq worker;阶段 0 先空跑
+    command: ["tail", "-f", "/dev/null"]
+    profiles: ["worker"]
+
+  db:
+    image: postgres:16-alpine
+    container_name: newsradar-db
+    environment:
+      - POSTGRES_USER=newsradar
+      - POSTGRES_PASSWORD=newsradar
+      - POSTGRES_DB=newsradar
+    ports:
+      - "5432:5432"
+    volumes:
+      - newsradar_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U newsradar -d newsradar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: newsradar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - newsradar_redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  newsradar_pgdata:
+  newsradar_redisdata:

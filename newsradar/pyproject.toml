@@ -1,0 +1,48 @@
+[project]
+name = "newsradar"
+version = "0.1.0"
+description = "NewsRadar - 多租户新闻订阅 SaaS(基于 TrendRadar 核心)"
+requires-python = ">=3.12"
+dependencies = [
+    # Web 框架与异步栈
+    "fastapi==0.118.0",
+    "uvicorn[standard]==0.37.0",
+    # 数据库
+    "sqlalchemy==2.0.41",
+    "alembic==1.16.1",
+    "psycopg[binary]==3.2.9",
+    # 鉴权
+    "python-jose[cryptography]==3.5.0",
+    "passlib[bcrypt]==1.7.4",
+    # 队列
+    "arq==0.26.1",
+    "redis==5.2.1",
+    # 配置与数据校验
+    "pydantic==2.11.7",
+    "pydantic-settings==2.10.1",
+    # 邮件(注册激活)
+    "aiosmtplib==3.1.0",
+    # 凭证加密
+    "cryptography==43.0.3",
+    # TrendRadar 核心(以 path 依赖引入,与 /workspace/trendradar 平级)
+    "trendradar",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.1",
+    "httpx==0.28.1",
+    "ruff==0.13.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,11 @@
+# TrendRadar path 依赖(开发期用 -e 即时生效)
+# 在容器内安装到 site-packages;在宿主机开发时用 -e 也可
+#
+# 方式 1:宿主机本地开发
+#   pip install -e ../trendradar
+#   pip install -e .
+#
+# 方式 2:Docker 构建期注入(见 Dockerfile)
+#
+# 这里不写 PEP 508 的 path 写法,因为 trendradar 还未发布到 PyPI,
+# 且部分场景下相对路径不稳定,改用 Dockerfile 内 pip install -e 引入
