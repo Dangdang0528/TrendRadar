@@ -14,14 +14,16 @@ dependencies = [
     # 鉴权
     "python-jose[cryptography]==3.5.0",
     "passlib[bcrypt]==1.7.4",
+    "bcrypt==4.0.1",  # passlib 1.7 兼容版(4.1+ 会触发 __about__ 警告)
     # 队列
     "arq==0.26.1",
     "redis==5.2.1",
     # 配置与数据校验
     "pydantic==2.11.7",
     "pydantic-settings==2.10.1",
+    "email-validator==2.3.0",
     # 邮件(注册激活)
-    "aiosmtplib==3.1.0",
+    "aiosmtplib>=2.0",
     # 凭证加密
     "cryptography==43.0.3",
     # TrendRadar 核心(以 path 依赖引入,与 /workspace/trendradar 平级)

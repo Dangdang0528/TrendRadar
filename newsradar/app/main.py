@@ -4,8 +4,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import auth, channels, health, schedule, subscriptions
 from app.config import get_settings
 from app.db import Base, engine
 
@@ -16,8 +17,12 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """应用生命周期
 
-    MVP 阶段:启动时自动建表(仅 dev 环境,生产用 alembic upgrade head)
+    dev 模式下自动建表(生产用 alembic upgrade head)。
+    注册所有 ORM 模型到 Base.metadata。
     """
+    # 触发所有模型注册
+    import app.models  # noqa: F401
+
     if settings.APP_ENV == "dev" and settings.DEBUG:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -32,7 +37,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS:MVP 阶段放开,前端 Alpine.js 单页可直接调用
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 路由注册
 app.include_router(health.router, prefix="")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")
+app.include_router(channels.router, prefix="/api/v1")
+app.include_router(schedule.router, prefix="/api/v1")
 
 
 @app.get("/")

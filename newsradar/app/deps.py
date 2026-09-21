@@ -5,7 +5,6 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -14,7 +13,7 @@ from app.models.user import User
 
 settings = get_settings()
 
-BEARRE_HEADER = "Authorization"
+BEARER_HEADER = "Authorization"
 
 
 async def get_current_user(
