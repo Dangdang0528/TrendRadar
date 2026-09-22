@@ -2,7 +2,7 @@
 name = "newsradar"
 version = "0.1.0"
 description = "NewsRadar - 多租户新闻订阅 SaaS(基于 TrendRadar 核心)"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<4.0"
 dependencies = [
     # Web 框架与异步栈
     "fastapi==0.118.0",
@@ -26,6 +26,9 @@ dependencies = [
     "aiosmtplib>=2.0",
     # 凭证加密
     "cryptography==43.0.3",
+    # 正文抓取(网页主内容提取,避免重复造轮子)
+    "trafilatura==2.0.0",
+    "requests==2.32.4",
     # TrendRadar 核心(以 path 依赖引入,与 /workspace/trendradar 平级)
     "trendradar",
 ]
@@ -43,8 +46,14 @@ dev = [
     "pytest==8.4.1",
     "httpx==0.28.1",
     "ruff==0.13.0",
+    "aiosqlite==0.21.0",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[dependency-groups]
+dev = [
+    "aiosqlite (==0.21.0)"
+]

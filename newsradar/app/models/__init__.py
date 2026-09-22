@@ -5,6 +5,7 @@
 """
 
 from app.models.ai_usage import AIUsage
+from app.models.article_content import ArticleContent
 from app.models.delivery_channel import DeliveryChannel
 from app.models.notification_log import NotificationLog
 from app.models.subscription import Subscription
@@ -18,4 +19,5 @@ __all__ = [
     "UserSchedule",
     "AIUsage",
     "NotificationLog",
+    "ArticleContent",
 ]

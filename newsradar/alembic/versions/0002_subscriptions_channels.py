@@ -5,16 +5,17 @@ Revises: 0001_baseline_users
 Create Date: 2026-09-21 00:01:00
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0002_subscriptions_channels"
-down_revision: Union[str, None] = "0001_baseline_users"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0001_baseline_users"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -101,7 +102,7 @@ def upgrade() -> None:
         sa.Column("model", sa.String(length=64), nullable=True),
         sa.Column("prompt_tokens", sa.Integer(), nullable=True),
         sa.Column("completion_tokens", sa.Integer(), nullable=True),
-        sa.Column("cost_cents", sa.Numeric(length=10, precision=4),
+        sa.Column("cost_cents", sa.Numeric(10, 4),
                   nullable=False),
         sa.Column("purpose", sa.String(length=32), nullable=False),
         sa.Column("success", sa.Boolean(), nullable=False),

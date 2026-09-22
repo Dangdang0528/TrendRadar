@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     AI_TIMEOUT: int = 120
     AI_MAX_TOKENS: int = 5000
 
+    # === 正文抓取(正文级 AI 深度总结) ===
+    # 正文抓取并发数(过多易触发反爬/被限速)
+    CONTENT_EXTRACT_MAX_WORKERS: int = 4
+    # 单篇正文截断后的最大字符数(控 token 成本)
+    CONTENT_EXTRACT_MAX_CHARS: int = 800
+    # 抓取 HTTP 超时(秒)
+    CONTENT_EXTRACT_TIMEOUT: int = 10
+    # 正文缓存保留时长(天),到期的缓存会被清理任务删除
+    CONTENT_CACHE_TTL_DAYS: int = 30
+
     # === TrendRadar 核心 ===
     # trendradar 的工作目录(读取 config/*.txt prompt、写入 output/news/*.db)
     TRENDRADAR_WORK_DIR: str = "/workspace"

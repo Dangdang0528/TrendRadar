@@ -1,4 +1,3 @@
-# coding=utf-8
 """数据库引擎与会话工厂"""
 
 from collections.abc import AsyncGenerator
@@ -17,18 +16,20 @@ from app.config import get_settings
 class Base(DeclarativeBase):
     """所有 ORM 模型的基类"""
 
-    pass
 
 
 settings = get_settings()
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_pre_ping=True,
-    echo=False,
-)
+_engine_kwargs = {
+    "pool_pre_ping": True,
+    "echo": False,
+}
+# SQLite(SQLAlchemy 单连接池)不接受 pool_size/max_overflow,生产 PostgreSQL 传
+if not settings.DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
