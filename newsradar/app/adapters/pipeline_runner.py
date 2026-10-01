@@ -4,11 +4,12 @@
 
 当前实现进度:
 - ✅ 加载用户上下文(_load_user_ctx)
+- ✅ 抓取+筛选(crawl_and_filter_for_user,复用 trendradar)
 - ✅ 正文级 AI 深度总结(run_ai_deep_summary_for_user,接入 ContentExtractor)
-- ⬜ 抓取+筛选(crawl_and_filter_for_user,待实现)
 - ⬜ 报告渲染与多渠道投递(待实现)
 """
 
+import asyncio
 import os
 from datetime import datetime
 from typing import Any
@@ -243,19 +244,128 @@ async def run_ai_deep_summary_for_user(
 
 
 # ══════════════════════════════════════════════════════════════
-# 阶段 2:抓取+筛选(待实现)
+# 阶段 2:抓取 + 关键词筛选
 # ══════════════════════════════════════════════════════════════
 
 
-async def crawl_and_filter_for_user(
-    user: UserCtx,
-) -> tuple[list[dict], list[dict]]:
-    """调用 trendradar 抓取平台/RSS 并做关键词筛选,产出 stats / rss_stats。
+def _merge_crawl_config(base: dict, user: UserCtx) -> dict:
+    """把 per-user 偏好叠加到 trendradar 的完整默认配置上(抓取阶段用)
 
-    TODO(阶段 2):复用 trendradar.context.AppContext 的抓取 + count_frequency,
-    返回 (stats, rss_stats)。当前尚未实现。
+    base 来自 trendradar.load_config():提供 REQUEST_INTERVAL / USE_PROXY /
+    WEIGHT_CONFIG / RANK_THRESHOLD 等抓取与统计所需的默认键;
+    per-user 覆盖平台、RSS、AI、报告模式、时区等。
     """
-    raise NotImplementedError("crawl_and_filter_for_user 待实现(阶段 2 抓取阶段)")
+    per = build_config_for_user(user)
+
+    cfg = dict(base)
+    for key in ("PLATFORMS", "REPORT_MODE", "TIMEZONE", "LANGUAGE", "DEBUG"):
+        cfg[key] = per[key]
+
+    # 存储:用绝对路径 + 仅 SQLite(OR 引擎侧不需要 txt/html 快照)
+    cfg["STORAGE"] = per["STORAGE"]
+
+    # RSS:保留 base 的抓取参数(超时/间隔/新鲜度),仅覆盖开关与源列表
+    cfg["RSS"] = {
+        **base.get("RSS", {}),
+        "ENABLED": per["RSS"]["ENABLED"],
+        "FEEDS": per["RSS"]["FEEDS"],
+    }
+
+    # 筛选策略:统一走关键词(MVP 不启用 AI 筛选)
+    cfg["FILTER"] = {"METHOD": "keyword", "PRIORITY_SORT_ENABLED": False}
+
+    # AI:模型配置用全局 key;关闭 trendradar 内置 AI 分析(深度总结由我们自己做)
+    cfg["AI"] = per["AI"]
+    cfg["AI_ANALYSIS"] = {**base.get("AI_ANALYSIS", {}), "ENABLED": False}
+
+    return cfg
+
+
+def _write_user_frequency_file(user: UserCtx) -> str:
+    """把用户的 keyword 订阅写成一个 trendradar 频率词文件
+
+    每个关键词独占一个词组(空行分隔);无关键词时写入空文件 → 统计层
+    会退化为"全部新闻",避免无谓过滤。
+    """
+    work_dir = get_settings().TRENDRADAR_WORK_DIR
+    out_dir = os.path.join(work_dir, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f".user_freq_{user.user_id}.txt")
+
+    keywords = [s.target.strip() for s in user.subscriptions if s.type == "keyword" and s.target.strip()]
+    content = "\n\n".join(keywords) + ("\n" if keywords else "")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return path
+
+
+def _crawl_sync(user: UserCtx) -> tuple[list[dict], list[dict]]:
+    """同步抓取 + 筛选(供 asyncio.to_thread 调用)
+
+    复用 trendradar 的 NewsAnalyzer 抓取/存储/统计方法,但不触发通知。
+    """
+    from trendradar.__main__ import NewsAnalyzer
+    from trendradar.core import load_config
+
+    settings = get_settings()
+    config_path = os.path.join(settings.TRENDRADAR_WORK_DIR, "config", "config.yaml")
+    base_cfg = load_config(config_path)
+    cfg = _merge_crawl_config(base_cfg, user)
+
+    analyzer = NewsAnalyzer(cfg)
+    freq_file = _write_user_frequency_file(user)
+    analyzer.frequency_file = freq_file
+
+    try:
+        # 1. 抓取热榜(写入 storage,供跨批次累积)
+        analyzer._crawl_data()
+        # 2. 抓取 RSS(未配置时内部直接返回空)
+        rss_stats, _rss_new, _raw, _urls = analyzer._crawl_rss_data()
+        # 3. 读取当天累积数据 → 关键词筛选 → stats
+        stats: list[dict] = []
+        analysis = analyzer._load_analysis_data(quiet=True)
+        if analysis:
+            (
+                all_results,
+                id_to_name,
+                title_info,
+                new_titles,
+                word_groups,
+                filter_words,
+                global_filters,
+            ) = analysis
+            stats, _total = analyzer.ctx.count_frequency(
+                all_results,
+                word_groups,
+                filter_words,
+                id_to_name,
+                title_info,
+                new_titles,
+                mode=user.schedule.report_mode,
+                global_filters=global_filters,
+                quiet=True,
+            )
+        return stats, (rss_stats or [])
+    finally:
+        if os.path.exists(freq_file):
+            os.remove(freq_file)
+        analyzer.ctx.cleanup()
+
+
+async def crawl_and_filter_for_user(user: UserCtx) -> tuple[list[dict], list[dict]]:
+    """抓取平台热榜 + RSS,并按用户关键词筛选,产出 (stats, rss_stats)。
+
+    复用 trendradar 的抓取/存储/统计能力(零上游改动)。抓取为阻塞 I/O,
+    放到线程池执行;过程中临时切换工作目录以兼容 trendradar 的相对路径约定。
+    """
+    settings = get_settings()
+    work_dir = settings.TRENDRADAR_WORK_DIR
+    prev_cwd = os.getcwd()
+    os.chdir(work_dir)
+    try:
+        return await asyncio.to_thread(_crawl_sync, user)
+    finally:
+        os.chdir(prev_cwd)
 
 
 # ══════════════════════════════════════════════════════════════

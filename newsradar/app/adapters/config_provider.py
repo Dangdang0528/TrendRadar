@@ -1,4 +1,3 @@
-# coding=utf-8
 """TrendRadar 配置 Provider
 
 将"用户的订阅偏好 + 全局默认"翻译成 trendradar 认识的 config dict。
@@ -8,7 +7,7 @@ trendradar 的核心模块只认 dict,不关心来源,因此我们零侵入适�
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.config import get_settings
 
@@ -19,8 +18,8 @@ class UserSubscriptionSpec:
 
     type: str  # platform / rss / keyword / ai_interest
     target: str  # platform_id / rss_url / 关键词文本 / ai_interest 文本
-    name: Optional[str] = None
-    config: Dict[str, Any] = field(default_factory=dict)
+    name: str | None = None
+    config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -28,8 +27,8 @@ class UserChannelSpec:
     """单条投递渠道"""
 
     channel: str  # feishu / email / ...
-    label: Optional[str]
-    credential: Dict[str, Any]  # 已解密的明文凭证
+    label: str | None
+    credential: dict[str, Any]  # 已解密的明文凭证
 
 
 @dataclass
@@ -51,12 +50,12 @@ class UserCtx:
     email: str
     timezone: str = "Asia/Shanghai"
     language: str = "zh"
-    subscriptions: List[UserSubscriptionSpec] = field(default_factory=list)
-    channels: List[UserChannelSpec] = field(default_factory=list)
+    subscriptions: list[UserSubscriptionSpec] = field(default_factory=list)
+    channels: list[UserChannelSpec] = field(default_factory=list)
     schedule: UserScheduleSpec = field(default_factory=UserScheduleSpec)
 
 
-def build_config_for_user(user: UserCtx) -> Dict[str, Any]:
+def build_config_for_user(user: UserCtx) -> dict[str, Any]:
     """把 UserCtx 翻译为 trendradar 风格的 config dict
 
     原则:
@@ -116,11 +115,13 @@ def build_config_for_user(user: UserCtx) -> Dict[str, Any]:
         "MODE": "follow_report",
     }
 
-    # 存储配置(本地 SQLite,在 trendradar 工作目录下的 output/news/)
+    # 存储配置(本地 SQLite,落在 trendradar 工作目录 output/ 下)
+    # 结构与 trendradar core.loader._load_storage_config 对齐,AppContext 才能识别
     work_dir = settings.TRENDRADAR_WORK_DIR
     storage_config = {
-        "TYPE": "local",  # trendradar 支持 local / s3
-        "LOCAL_PATH": f"{work_dir}/output/news",
+        "BACKEND": "local",  # trendradar 支持 auto / local / remote(s3)
+        "LOCAL": {"DATA_DIR": f"{work_dir}/output"},
+        "FORMATS": {"SQLITE": True, "TXT": False, "HTML": False},
     }
 
     config = {
