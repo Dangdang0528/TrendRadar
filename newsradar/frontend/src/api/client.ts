@@ -4,7 +4,9 @@ import type {
   AIUsageSummary,
   Channel,
   ChannelTestResult,
+  GlobalFilterWords,
   PlatformInfo,
+  PlatformSelection,
   Schedule,
   Subscription,
   TokenResponse,
@@ -84,6 +86,11 @@ export const api = {
 
   // 订阅
   platforms: () => request<{ platforms: PlatformInfo[]; source: string }>('/subscriptions/platforms'),
+  putPlatforms: (platforms: string[]) =>
+    request<PlatformSelection>('/subscriptions/platforms', { method: 'PUT', body: { platforms } }),
+  getGlobalFilters: () => request<GlobalFilterWords>('/subscriptions/global-filters'),
+  putGlobalFilters: (words: string[]) =>
+    request<GlobalFilterWords>('/subscriptions/global-filters', { method: 'PUT', body: { words } }),
   listSubs: () => request<Subscription[]>('/subscriptions'),
   createSub: (body: { type: string; target: string; name?: string; config?: Record<string, unknown> }) =>
     request<Subscription>('/subscriptions', { method: 'POST', body }),

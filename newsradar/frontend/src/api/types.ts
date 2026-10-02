@@ -18,7 +18,16 @@ export interface TokenResponse {
   expires_in: number
 }
 
-export type SubType = 'platform' | 'rss' | 'keyword' | 'ai_interest'
+export type SubType = 'platform' | 'rss' | 'keyword' | 'ai_interest' | 'global_filter'
+
+/** 一个关键词词组,对应 frequency_words.txt 里由空行分隔的一个块 */
+export interface KeywordGroupConfig {
+  alias: string | null
+  words: string[]
+  required: string[]
+  filters: string[]
+  max_count: number
+}
 
 export interface Subscription {
   id: number
@@ -35,6 +44,16 @@ export interface PlatformInfo {
   id: string
   name: string
   enabled: boolean
+}
+
+/** 平台多选结果;空列表表示"不限制",即抓取全部平台 */
+export interface PlatformSelection {
+  platforms: string[]
+}
+
+/** 全局过滤词,命中即排除整条新闻 */
+export interface GlobalFilterWords {
+  words: string[]
 }
 
 export type ReportMode = 'daily' | 'current' | 'incremental'

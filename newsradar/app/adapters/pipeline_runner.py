@@ -24,6 +24,7 @@ from app.adapters.config_provider import (
     UserScheduleSpec,
     UserSubscriptionSpec,
     build_config_for_user,
+    render_frequency_words,
 )
 from app.adapters.content_extractor import ContentExtractor
 from app.adapters.deep_summary import DeepSummaryResult, run_content_deep_summary
@@ -284,20 +285,35 @@ def _merge_crawl_config(base: dict, user: UserCtx) -> dict:
 
 
 def _write_user_frequency_file(user: UserCtx) -> str:
-    """把用户的 keyword 订阅写成一个 trendradar 频率词文件
+    """把用户的关键词组 + 全局过滤词写成一个 trendradar 频率词文件
 
-    每个关键词独占一个词组(空行分隔);无关键词时写入空文件 → 统计层
-    会退化为"全部新闻",避免无谓过滤。
+    词组结构由 render_frequency_words 渲染为 frequency_words.txt 语法
+    ([组别名] / 普通词 / +必须词 / !排除词 / @条数)。
+    两者都为空时 → 无词组 → 统计层退化为"全部新闻",避免无谓过滤。
     """
     work_dir = get_settings().TRENDRADAR_WORK_DIR
     out_dir = os.path.join(work_dir, "output")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f".user_freq_{user.user_id}.txt")
 
-    keywords = [s.target.strip() for s in user.subscriptions if s.type == "keyword" and s.target.strip()]
-    content = "\n\n".join(keywords) + ("\n" if keywords else "")
+    groups: list[dict] = []
+    for s in user.subscriptions:
+        if s.type != "keyword":
+            continue
+        cfg = dict(s.config or {})
+        # 早期版本每个关键词独占一行(target 存词本身),这里补成单词语组,
+        # 否则老数据的词会被静默丢弃 → 用户突然收到全部新闻
+        if not cfg.get("words") and not cfg.get("required") and s.target.strip():
+            cfg["words"] = [s.target.strip()]
+        groups.append(cfg)
+
+    global_filters: list[str] = []
+    for s in user.subscriptions:
+        if s.type == "global_filter":
+            global_filters.extend(str(w) for w in (s.config or {}).get("words", []) or [])
+
     with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(render_frequency_words(groups, global_filters))
     return path
 
 

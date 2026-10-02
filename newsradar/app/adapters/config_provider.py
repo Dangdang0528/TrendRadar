@@ -7,6 +7,7 @@ trendradar 的核心模块只认 dict,不关心来源,因此我们零侵入适�
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
@@ -16,8 +17,8 @@ from app.config import get_settings
 class UserSubscriptionSpec:
     """单条用户订阅(与未来 ORM 解耦的中间数据结构)"""
 
-    type: str  # platform / rss / keyword / ai_interest
-    target: str  # platform_id / rss_url / 关键词文本 / ai_interest 文本
+    type: str  # platform / rss / keyword / ai_interest / global_filter
+    target: str  # platform_id / rss_url / 关键词组标识 / 全局过滤词
     name: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
 
@@ -57,6 +58,103 @@ class UserCtx:
     schedule: UserScheduleSpec = field(default_factory=UserScheduleSpec)
 
 
+PLATFORM_CATALOG_CACHE: list[dict[str, Any]] | None = None
+
+# 全局过滤词的"单例行"占位 target(user_subscriptions 需要唯一 target)
+GLOBAL_FILTER_TARGET = "__global__"
+
+
+def load_platform_catalog() -> list[dict[str, Any]]:
+    """从 trendradar config/config.yaml 读取内置平台清单(带进程内缓存)
+
+    Returns:
+        [{"id", "name", "enabled"}, ...];文件缺失或解析失败时返回空列表
+    """
+    global PLATFORM_CATALOG_CACHE
+    if PLATFORM_CATALOG_CACHE is not None:
+        return PLATFORM_CATALOG_CACHE
+
+    import yaml
+
+    config_path = Path(get_settings().TRENDRADAR_WORK_DIR) / "config" / "config.yaml"
+    sources: list[dict[str, Any]] = []
+    try:
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            sources = data.get("platforms", {}).get("sources", []) or []
+    except Exception:  # noqa: BLE001 - 清单读不到时退化为空,不影响主流程
+        sources = []
+
+    catalog = [
+        {"id": s["id"], "name": s.get("name", s["id"]), "enabled": s.get("enabled", True)}
+        for s in sources
+        if s.get("id")
+    ]
+    PLATFORM_CATALOG_CACHE = catalog
+    return catalog
+
+
+def render_word_group(cfg: dict[str, Any]) -> str:
+    """把结构化的关键词组渲染成 frequency_words.txt 里的一个词组块
+
+    语法(与 trendradar/core/frequency.py 对齐):
+        [组别名]   词组第一行,给整组指定显示名
+        普通词     组内"或"关系,任一命中即可
+        +词        必须词,全部命中才算匹配
+        !词        排除词,命中则整条新闻被排除
+        @N         该组最多显示 N 条
+        /pat/      正则(自动忽略大小写)
+    """
+    alias = str(cfg.get("alias") or "").strip()
+    words = [str(w).strip() for w in (cfg.get("words") or []) if str(w).strip()]
+    required = [str(w).strip() for w in (cfg.get("required") or []) if str(w).strip()]
+    filters = [str(w).strip() for w in (cfg.get("filters") or []) if str(w).strip()]
+    try:
+        max_count = int(cfg.get("max_count") or 0)
+    except (TypeError, ValueError):
+        max_count = 0
+
+    if not words and not required:
+        return ""
+
+    lines: list[str] = []
+    if alias:
+        lines.append(f"[{alias}]")
+    lines.extend(words)
+    lines.extend(f"+{w}" for w in required)
+    lines.extend(f"!{w}" for w in filters)
+    if max_count > 0:
+        lines.append(f"@{max_count}")
+    return "\n".join(lines)
+
+
+def render_frequency_words(
+    keyword_groups: list[dict[str, Any]],
+    global_filters: list[str] | None = None,
+) -> str:
+    """渲染完整的 frequency_words.txt 内容
+
+    两个区域必须都显式写出 [GLOBAL_FILTER] 与 [WORD_GROUPS]:解析器只在
+    遇到区域标记时切换 current_section,缺少 [WORD_GROUPS] 会让后续词组
+    被当成全局过滤词。
+
+    两个区域都为空时,文件不产生任何词组 → trendradar 匹配所有新闻(即不过滤)。
+    """
+    lines: list[str] = ["[GLOBAL_FILTER]"]
+    lines.extend(str(w).strip() for w in (global_filters or []) if str(w).strip())
+    lines.append("")
+    lines.append("[WORD_GROUPS]")
+
+    for cfg in keyword_groups:
+        block = render_word_group(cfg)
+        if block:
+            lines.append("")
+            lines.append(block)
+
+    return "\n".join(lines) + "\n"
+
+
 def build_config_for_user(user: UserCtx) -> dict[str, Any]:
     """把 UserCtx 翻译为 trendradar 风格的 config dict
 
@@ -69,15 +167,18 @@ def build_config_for_user(user: UserCtx) -> dict[str, Any]:
 
     settings = get_settings()
 
-    # 平台订阅
+    # 平台订阅:未指定任何平台时默认抓取全部平台
     platforms = [
         {"id": s.target, "name": s.name or s.target, "enabled": True}
         for s in user.subscriptions
         if s.type == "platform"
     ]
     if not platforms:
-        # 没订阅平台时,给一个空列表,避免 trendradar 跑全部平台
-        platforms = []
+        platforms = [
+            {"id": p["id"], "name": p["name"], "enabled": True}
+            for p in load_platform_catalog()
+            if p.get("enabled", True)
+        ]
 
     # RSS 订阅
     rss_feeds = [
@@ -86,10 +187,9 @@ def build_config_for_user(user: UserCtx) -> dict[str, Any]:
         if s.type == "rss"
     ]
 
-    # 关键词(复用 trendradar 的 frequency_words 概念)
-    frequency_words = "\n".join(
-        s.target for s in user.subscriptions if s.type == "keyword"
-    )
+    # 关键词:trendradar 只认 frequency_words.txt 文件,per-user 内容由
+    # pipeline_runner._write_user_frequency_file + render_frequency_words 生成,
+    # 无法通过 config dict 传递(故此处不构造 FREQUENCY_WORDS 键)。
 
     # AI 兴趣描述
     ai_interests = "\n".join(
@@ -142,7 +242,6 @@ def build_config_for_user(user: UserCtx) -> dict[str, Any]:
         },
 
         # 筛选
-        "FREQUENCY_WORDS": frequency_words,
         "AI_INTERESTS": ai_interests,
         "FILTER": {
             "FREQUENCY_MIN_COUNT": 1,

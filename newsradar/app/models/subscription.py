@@ -2,10 +2,13 @@
 """订阅 ORM 模型
 
 订阅类型 type:
-    - platform    平台热榜,target = platform_id(如 zhihu / weibo / bilibili)
-    - rss         RSS 源,target = rss url
-    - keyword     关键词订阅,target = 关键词文本
-    - ai_interest AI 兴趣描述,target = 自然语言描述
+    - platform      平台热榜,target = platform_id(如 zhihu / weibo / bilibili)
+    - rss           RSS 源,target = rss url
+    - keyword       关键词组,target = 派生标识(组别名或词拼接),
+                    config 见 schemas.subscription.KeywordGroupConfig
+    - ai_interest   AI 兴趣描述,target = 自然语言描述
+    - global_filter 全局过滤词,单例行(target = __global__),
+                    config = {"words": [...]}
 """
 
 from datetime import datetime
