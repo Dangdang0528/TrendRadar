@@ -6,7 +6,7 @@
 - ✅ 加载用户上下文(_load_user_ctx)
 - ✅ 抓取+筛选(crawl_and_filter_for_user,复用 trendradar)
 - ✅ 正文级 AI 深度总结(run_ai_deep_summary_for_user,接入 ContentExtractor)
-- ⬜ 报告渲染与多渠道投递(待实现)
+- ✅ 报告渲染与多渠道投递(deliver_report_for_user,复用 trendradar 通知层)
 """
 
 import asyncio
@@ -27,6 +27,7 @@ from app.adapters.config_provider import (
 )
 from app.adapters.content_extractor import ContentExtractor
 from app.adapters.deep_summary import DeepSummaryResult, run_content_deep_summary
+from app.adapters.delivery import deliver_report_for_user
 from app.config import get_settings
 from app.db import AsyncSessionLocal, db_session
 
@@ -380,10 +381,9 @@ async def run_pipeline_for_user(
     rss_stats: list[dict] | None = None,
     db: AsyncSession | None = None,
 ) -> dict[str, Any]:
-    """按 user_id 执行流水线:加载上下文 → 抓取筛选 → AI 深度总结。
+    """按 user_id 执行流水线:加载上下文 → 抓取筛选 → AI 深度总结 → 报告投递。
 
-    抓取/渲染/投递阶段仍在建设中;可通过 stats 注入已抓取数据以单独验证
-    AI 深度总结阶段(测试用)。
+    抓取/渲染/投递可通过 stats 注入已抓取数据以单独验证后续阶段(测试用)。
 
     Returns:
         各阶段执行摘要
@@ -432,6 +432,16 @@ async def _run_pipeline(
             "error": ai_result.error,
         }
         result["ai_deep_summary"] = ai_result
+
+    # 4. 报告渲染 + 多渠道投递
+    delivery = await deliver_report_for_user(user, stats or [], rss_stats, db=db)
+    result["steps"]["delivery"] = {
+        "enabled": delivery["enabled"],
+        "skipped": delivery["skipped"],
+        "reason": delivery["reason"],
+        "report_type": delivery["report_type"],
+        "results": delivery["results"],
+    }
 
     result["ok"] = True
     return result
