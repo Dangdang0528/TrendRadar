@@ -73,6 +73,45 @@ docker compose -f newsradar/docker-compose.yml exec api \
 - **阶段 1**:用户/认证 + 订阅/渠道 CRUD
 - **阶段 2**:Arq worker + per-user 调度 + 端到端投递;接入 AI 总结(方案 B)
 
+## 前端 · Web 控制台(frontend/)
+
+React + TypeScript + Vite 的单页应用,覆盖:登录/注册、订阅管理、调度与 AI 设置、投递渠道、AI 用量。
+
+### 开发模式(热更新)
+
+```sh
+cd frontend
+npm install
+npm run dev        # http://localhost:5173,/api 与 /health 自动代理到 8000
+```
+
+先另开一个终端把后端跑起来(见「阶段 0 启动」或本地 venv 方式)。
+
+### 生产模式(由 FastAPI 托管)
+
+```sh
+cd frontend && npm run build          # 产物输出到 frontend/dist
+```
+
+`app/main.py` 检测到 `frontend/dist` 存在时,会:
+
+- 挂载 `/assets` 静态资源;
+- 对非 API 路径(如 `/subscriptions`)做 SPA 回退,返回 `index.html`(前端刷新不 404)。
+
+此时访问 `http://localhost:8000/` 即是控制台,`/docs` 仍是 API 文档。
+
+### 本地免 Docker 运行(venv + SQLite)
+
+```sh
+cd newsradar
+python -m venv .venv
+.venv/bin/pip install -e ..            # 本地 trendradar(path 依赖)
+.venv/bin/pip install -e ".[dev]"      # 应用 + 依赖 + 测试
+cp .env.example .env                   # 改 DATABASE_URL 为 sqlite+aiosqlite:///./local.db
+.venv/bin/pytest -q                    # 跑适配层测试
+.venv/bin/uvicorn app.main:app --port 8000
+```
+
 ## 部署 · 宝塔 Linux 面板 + Docker
 
 > 本章针对**宝塔(BT)Linux 面板**环境。核心思路:代码与 Docker 都在服务器上,
