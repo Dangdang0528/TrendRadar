@@ -10,6 +10,7 @@ import pytest
 import app.adapters.pipeline_runner as pr
 import app.adapters.report_renderer as rr
 import trendradar.notification.dispatcher as dispatcher_mod
+from app.adapters import delivery
 from app.adapters.delivery import deliver_report_for_user
 from app.db import AsyncSessionLocal, Base, engine
 
@@ -53,9 +54,13 @@ def _prepare():
     yield
 
 
-async def _create_user_with_channel(channel: str, credential: dict) -> int:
+async def _create_user(
+    channels: list[tuple[str, dict]] | None = None,
+    channel_filter: dict | None = None,
+) -> int:
     from app.models.delivery_channel import DeliveryChannel
     from app.models.user import User
+    from app.models.user_schedule import UserSchedule
     from app.services.crypto import encrypt_credential
 
     async with AsyncSessionLocal() as s:
@@ -63,18 +68,53 @@ async def _create_user_with_channel(channel: str, credential: dict) -> int:
         s.add(u)
         await s.flush()
         uid = u.id
-        s.add(
-            DeliveryChannel(
-                user_id=uid,
-                channel=channel,
-                label="测试渠道",
-                credential_encrypted=encrypt_credential(credential),
-                priority=0,
-                enabled=True,
+        for idx, (channel, credential) in enumerate(channels or []):
+            s.add(
+                DeliveryChannel(
+                    user_id=uid,
+                    channel=channel,
+                    label=f"测试渠道{idx}",
+                    credential_encrypted=encrypt_credential(credential),
+                    priority=0,
+                    enabled=True,
+                )
             )
-        )
+        if channel_filter is not None:
+            s.add(UserSchedule(user_id=uid, channel_filter=channel_filter))
         await s.commit()
     return uid
+
+
+async def _create_user_with_channel(channel: str, credential: dict) -> int:
+    return await _create_user([(channel, credential)])
+
+
+def _run_delivery(uid: int, stats: list[dict] | None = None) -> dict:
+    async def _inner():
+        async with AsyncSessionLocal() as s:
+            user = await pr._load_user_ctx(uid, s)
+            out = await deliver_report_for_user(user, STATS if stats is None else stats, None, db=s)
+            await s.commit()  # 对齐 app.db.db_session 的提交语义
+            return out
+
+    return asyncio.run(_inner())
+
+
+def _log_status(uid: int) -> str | None:
+    async def _inner():
+        from sqlalchemy import select
+
+        from app.models.notification_log import NotificationLog
+
+        async with AsyncSessionLocal() as s:
+            row = (
+                await s.execute(
+                    select(NotificationLog).where(NotificationLog.user_id == uid)
+                )
+            ).scalar_one_or_none()
+            return row.status if row else None
+
+    return asyncio.run(_inner())
 
 
 # ── 渲染 ─────────────────────────────────────────────────────
@@ -120,33 +160,13 @@ def test_deliver_report_dispatches_and_logs(monkeypatch):
         _create_user_with_channel("feishu", {"webhook_url": "https://hook.ex/f"})
     )
 
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            user = await pr._load_user_ctx(uid, s)
-            out = await deliver_report_for_user(user, STATS, None, db=s)
-            await s.commit()  # 对齐 app.db.db_session 的提交语义
-            return out
-
-    out = asyncio.run(_run())
+    out = _run_delivery(uid)
     assert out["enabled"] and not out["skipped"], out
     assert out["results"] == {"feishu": True}
     assert sent and sent[0]["url"] == "https://hook.ex/f"
     assert sent[0]["stats"], "应把渲染后的 stats 传给发送器"
 
-    async def _log_status() -> str | None:
-        from sqlalchemy import select
-
-        from app.models.notification_log import NotificationLog
-
-        async with AsyncSessionLocal() as s:
-            row = (
-                await s.execute(
-                    select(NotificationLog).where(NotificationLog.user_id == uid)
-                )
-            ).scalar_one_or_none()
-            return row.status if row else None
-
-    assert asyncio.run(_log_status()) == "success"
+    assert _log_status(uid) == "success"
 
 
 def test_deliver_records_failed_status(monkeypatch):
@@ -157,52 +177,16 @@ def test_deliver_records_failed_status(monkeypatch):
         _create_user_with_channel("feishu", {"webhook_url": "https://hook.ex/bad"})
     )
 
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            user = await pr._load_user_ctx(uid, s)
-            out = await deliver_report_for_user(user, STATS, None, db=s)
-            await s.commit()  # 对齐 app.db.db_session 的提交语义
-            return out
-
-    out = asyncio.run(_run())
+    out = _run_delivery(uid)
     assert out["results"] == {"feishu": False}
 
-    async def _log_status() -> str | None:
-        from sqlalchemy import select
-
-        from app.models.notification_log import NotificationLog
-
-        async with AsyncSessionLocal() as s:
-            row = (
-                await s.execute(
-                    select(NotificationLog).where(NotificationLog.user_id == uid)
-                )
-            ).scalar_one_or_none()
-            return row.status if row else None
-
-    assert asyncio.run(_log_status()) == "failed"
+    assert _log_status(uid) == "failed"
 
 
 def test_deliver_skips_without_channels(monkeypatch):
-    async def _create_user() -> int:
-        from app.models.user import User
-
-        async with AsyncSessionLocal() as s:
-            u = User(email=f"n{uuid.uuid4().hex[:8]}@t.local", password_hash="x")
-            s.add(u)
-            await s.flush()
-            uid = u.id
-            await s.commit()
-        return uid
-
     uid = asyncio.run(_create_user())
 
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            user = await pr._load_user_ctx(uid, s)
-            return await deliver_report_for_user(user, STATS, None, db=s)
-
-    out = asyncio.run(_run())
+    out = _run_delivery(uid)
     assert out["skipped"] and out["reason"] == "未配置投递渠道"
     assert out["results"] == {}
 
@@ -216,11 +200,84 @@ def test_deliver_skips_without_content(monkeypatch):
         _create_user_with_channel("feishu", {"webhook_url": "https://hook.ex/f"})
     )
 
-    async def _run():
-        async with AsyncSessionLocal() as s:
-            user = await pr._load_user_ctx(uid, s)
-            return await deliver_report_for_user(user, [], None, db=s)
-
-    out = asyncio.run(_run())
+    out = _run_delivery(uid, stats=[])
     assert out["skipped"] and "无匹配内容" in out["reason"]
     assert not called, "无内容时不应发起投递"
+
+
+# ── channel_filter ───────────────────────────────────────────
+
+
+def test_selected_channels_rules():
+    avail = ["feishu", "email", "telegram"]
+
+    # 不过滤
+    assert delivery.selected_channels(None, avail) == avail
+    assert delivery.selected_channels({}, avail) == avail
+    assert delivery.selected_channels({"include": []}, avail) == avail
+
+    # 白名单(忽略大小写与空白)
+    assert delivery.selected_channels({"include": ["Feishu "]}, avail) == ["feishu"]
+
+    # 黑名单
+    assert delivery.selected_channels({"exclude": ["email"]}, avail) == ["feishu", "telegram"]
+
+    # exclude 优先级高于 include
+    assert delivery.selected_channels(
+        {"include": ["feishu", "email"], "exclude": ["email"]}, avail
+    ) == ["feishu"]
+
+    # 过滤为空 → 空列表(调用方按"无人接收"处理)
+    assert delivery.selected_channels({"include": ["webhook"]}, avail) == []
+
+
+def _stub_senders(monkeypatch, sent: list[str]):
+    monkeypatch.setattr(
+        dispatcher_mod, "send_to_feishu", lambda *a, **kw: sent.append("feishu") or True
+    )
+    monkeypatch.setattr(
+        dispatcher_mod, "send_to_telegram", lambda *a, **kw: sent.append("telegram") or True
+    )
+
+
+TWO_CHANNELS = [
+    ("feishu", {"webhook_url": "https://hook.ex/f"}),
+    ("telegram", {"bot_token": "bot-token", "chat_id": "123"}),
+]
+
+
+def test_channel_filter_include_limits_delivery(monkeypatch):
+    sent: list[str] = []
+    _stub_senders(monkeypatch, sent)
+    uid = asyncio.run(_create_user(TWO_CHANNELS, channel_filter={"include": ["feishu"]}))
+
+    out = _run_delivery(uid)
+    assert out["results"] == {"feishu": True}
+    assert sent == ["feishu"]
+    assert _log_status(uid) == "success"
+
+
+def test_channel_filter_exclude_wins(monkeypatch):
+    sent: list[str] = []
+    _stub_senders(monkeypatch, sent)
+    uid = asyncio.run(
+        _create_user(
+            TWO_CHANNELS,
+            channel_filter={"include": ["feishu", "telegram"], "exclude": ["telegram"]},
+        )
+    )
+
+    out = _run_delivery(uid)
+    assert out["results"] == {"feishu": True}
+    assert sent == ["feishu"]
+
+
+def test_channel_filter_excluding_all_skips(monkeypatch):
+    sent: list[str] = []
+    _stub_senders(monkeypatch, sent)
+    # 只允许 webhook,但用户没配 webhook
+    uid = asyncio.run(_create_user(TWO_CHANNELS, channel_filter={"include": ["webhook"]}))
+
+    out = _run_delivery(uid)
+    assert out["skipped"] and "channel_filter" in out["reason"]
+    assert sent == [], "被筛掉的渠道不应发起投递"

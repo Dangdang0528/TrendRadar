@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError, api } from '../api/client'
-import type { ReportMode, Schedule } from '../api/types'
+import type { ChannelType, ReportMode, Schedule } from '../api/types'
 
 const CRON_PRESETS: { label: string; value: string }[] = [
   { label: '每天 09:00', value: '0 9 * * *' },
@@ -17,6 +17,31 @@ const MODES: { value: ReportMode; label: string; desc: string }[] = [
   { value: 'incremental', label: '增量', desc: '仅推送上次之后新增的条目' },
 ]
 
+const CHANNEL_LABELS: Record<ChannelType, string> = {
+  feishu: '飞书',
+  email: '邮箱',
+  telegram: 'Telegram',
+  webhook: 'Webhook',
+}
+
+/** 与后端 delivery.selected_channels 同规则:解析出本次要投递的渠道 */
+function resolveSelected(
+  filter: Record<string, unknown> | null,
+  available: ChannelType[],
+): ChannelType[] {
+  if (!filter) return available
+  const pick = (key: string): string[] =>
+    Array.isArray(filter[key])
+      ? (filter[key] as unknown[]).map((x) => String(x).trim().toLowerCase())
+      : []
+  const include = pick('include')
+  const exclude = pick('exclude')
+  if (!include.length && !exclude.length) return available
+  return available.filter(
+    (c) => (!include.length || include.includes(c)) && !exclude.includes(c),
+  )
+}
+
 export default function SchedulePage() {
   const [sched, setSched] = useState<Schedule | null>(null)
   const [cron, setCron] = useState('0 9 * * *')
@@ -25,6 +50,8 @@ export default function SchedulePage() {
   const [ai, setAi] = useState(false)
   const [aiMax, setAiMax] = useState(30)
   const [aiLang, setAiLang] = useState('zh')
+  const [channels, setChannels] = useState<ChannelType[]>([])
+  const [picked, setPicked] = useState<ChannelType[]>([])
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
@@ -32,7 +59,7 @@ export default function SchedulePage() {
   useEffect(() => {
     ;(async () => {
       try {
-        const s = await api.getSchedule()
+        const [s, chs] = await Promise.all([api.getSchedule(), api.listChannels()])
         setSched(s)
         setCron(s.cron_expr)
         setMode(s.report_mode)
@@ -40,15 +67,38 @@ export default function SchedulePage() {
         setAi(s.enable_ai_summary)
         setAiMax(s.ai_max_news)
         setAiLang(s.ai_language)
+
+        const avail = [...new Set(chs.filter((c) => c.enabled).map((c) => c.channel))]
+        setChannels(avail)
+        setPicked(resolveSelected(s.channel_filter, avail))
       } catch (ex) {
         setErr(ex instanceof ApiError ? ex.message : '加载失败')
       }
     })()
   }, [])
 
+  function toggleChannel(c: ChannelType) {
+    setPicked((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]))
+  }
+
+  /** 全选 → {} 表示不过滤;部分选择 → include 白名单 */
+  function buildChannelFilter(): Record<string, string[]> | null {
+    if (!channels.length) return {}
+    if (picked.length === 0) return null
+    if (picked.length === channels.length) return {}
+    return { include: picked }
+  }
+
   async function save() {
     setErr('')
     setOk('')
+
+    const channelFilter = buildChannelFilter()
+    if (channelFilter === null) {
+      setErr('至少选择一个投递渠道,否则报告无处可发')
+      return
+    }
+
     setBusy(true)
     try {
       const s = await api.updateSchedule({
@@ -57,6 +107,7 @@ export default function SchedulePage() {
         enable_ai_summary: ai,
         ai_language: aiLang,
         ai_max_news: aiMax,
+        channel_filter: channelFilter,
         enabled,
       })
       setSched(s)
@@ -139,6 +190,39 @@ export default function SchedulePage() {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="card">
+        <h3 className="card__title">投递渠道</h3>
+        <p className="card__hint">
+          选择这条推送要发往哪些渠道;全部勾选等同于不限制。未勾选的渠道本次不会收到报告。
+        </p>
+
+        {channels.length === 0 ? (
+          <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+            还没有已启用的投递渠道,先到「投递渠道」页添加。
+          </p>
+        ) : (
+          <div className="rows">
+            {channels.map((c) => {
+              const on = picked.includes(c)
+              return (
+                <label key={c} className="row" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggleChannel(c)}
+                    style={{ width: 'auto', marginRight: 4 }}
+                  />
+                  <div className="row__main">
+                    <div className="row__title">{CHANNEL_LABELS[c]}</div>
+                    <div className="row__sub">{on ? '本次推送会发送' : '本次推送跳过'}</div>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="card">

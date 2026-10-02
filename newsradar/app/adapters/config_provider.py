@@ -40,6 +40,8 @@ class UserScheduleSpec:
     enable_ai_summary: bool = False
     ai_language: str = "zh"
     ai_max_news: int = 30
+    # 投递渠道筛选:{"include": ["feishu"], "exclude": ["email"]},None/{} 表示不过滤
+    channel_filter: dict[str, Any] | None = None
 
 
 @dataclass

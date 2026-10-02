@@ -1,6 +1,7 @@
 """多渠道投递(阶段 2)
 
 把渲染好的报告真正投递到用户的各渠道,并写入 notification_logs。
+投递范围由 schedule.channel_filter(include 白名单 / exclude 黑名单)决定。
 
 复用 trendradar 的 NotificationDispatcher + senders(零上游改动):
 将 per-user 渠道凭证翻译成 trendradar 的通知配置,交由 dispatcher 分发,
@@ -23,6 +24,9 @@ from app.adapters.report_renderer import (
 )
 from app.config import get_settings
 
+# 支持的投递渠道
+CHANNEL_NAMES = ("feishu", "email", "telegram", "webhook")
+
 # dispatcher.dispatch_all 返回的 key → 我方渠道名
 _DISPATCH_KEY_TO_CHANNEL = {
     "feishu": "feishu",
@@ -30,6 +34,39 @@ _DISPATCH_KEY_TO_CHANNEL = {
     "telegram": "telegram",
     "generic_webhook": "webhook",
 }
+
+
+def _as_channel_set(value: Any) -> set[str]:
+    """把 channel_filter 的 include/exclude 值规范成小写渠道名集合"""
+    if not isinstance(value, (list, tuple)):
+        return set()
+    return {str(x).strip().lower() for x in value if str(x).strip()}
+
+
+def selected_channels(
+    channel_filter: dict[str, Any] | None,
+    available: list[str],
+) -> list[str]:
+    """按 schedule.channel_filter 从已配置渠道中挑出本次要投递的渠道。
+
+    规则:
+    - channel_filter 为 None/{} 或两个键都为空 → 不过滤,返回全部
+    - include 非空 → 白名单,只保留其中的渠道
+    - exclude → 黑名单,优先级高于 include
+    - 过滤结果可能为空(表示"没有渠道该收到"),由调用方决定如何处理
+    """
+    if not isinstance(channel_filter, dict):
+        return list(available)
+
+    include = _as_channel_set(channel_filter.get("include"))
+    exclude = _as_channel_set(channel_filter.get("exclude"))
+    if not include and not exclude:
+        return list(available)
+
+    return [
+        c for c in available
+        if (not include or c in include) and c not in exclude
+    ]
 
 
 def _email_fragment(cred: dict[str, Any]) -> dict[str, Any]:
@@ -52,14 +89,22 @@ def _email_fragment(cred: dict[str, Any]) -> dict[str, Any]:
     return frag
 
 
-def build_notification_config(user: UserCtx) -> dict[str, Any]:
-    """把用户的投递渠道翻译成 trendradar 通知配置;凭证不完整的渠道会被跳过"""
+def build_notification_config(
+    user: UserCtx,
+    allowed: list[str] | None = None,
+) -> dict[str, Any]:
+    """把用户的投递渠道翻译成 trendradar 通知配置;凭证不完整的渠道会被跳过。
+
+    allowed 为 None 时不过滤;否则只翻译其中的渠道(来自 channel_filter)。
+    """
     config: dict[str, Any] = {
         "MAX_ACCOUNTS_PER_CHANNEL": 1,
         "BATCH_SEND_INTERVAL": 1.0,
     }
 
     for ch in user.channels:
+        if allowed is not None and ch.channel not in allowed:
+            continue
         cred = ch.credential or {}
         if ch.channel == "feishu":
             if cred.get("webhook_url"):
@@ -159,7 +204,7 @@ async def deliver_report_for_user(
     id_to_name: dict | None = None,
     failed_ids: list | None = None,
 ) -> dict[str, Any]:
-    """渲染报告并投递到用户全部已启用渠道。
+    """渲染报告并投递到用户在 channel_filter 允许范围内的已启用渠道。
 
     Returns:
         {"enabled", "skipped", "reason", "report_type", "results", "html_path"}
@@ -173,7 +218,16 @@ async def deliver_report_for_user(
             "report_type": report_type, "results": {},
         }
 
-    config = build_notification_config(user)
+    allowed = selected_channels(
+        user.schedule.channel_filter, [c.channel for c in user.channels]
+    )
+    if not allowed:
+        return {
+            "enabled": False, "skipped": True, "reason": "渠道被 channel_filter 规则排除",
+            "report_type": report_type, "results": {},
+        }
+
+    config = build_notification_config(user, allowed=allowed)
     if not any(k for k in ("FEISHU_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN", "GENERIC_WEBHOOK_URL", "EMAIL_FROM") if config.get(k)):
         return {
             "enabled": False, "skipped": True, "reason": "渠道凭证不完整",

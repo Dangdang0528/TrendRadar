@@ -140,6 +140,7 @@ async def _load_user_ctx(user_id: int, db: AsyncSession) -> UserCtx | None:
             enable_ai_summary=sched_row.enable_ai_summary,
             ai_language=sched_row.ai_language,
             ai_max_news=sched_row.ai_max_news,
+            channel_filter=sched_row.channel_filter,
         )
     else:
         schedule = UserScheduleSpec()
