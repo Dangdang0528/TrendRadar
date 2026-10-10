@@ -4,6 +4,7 @@ import type {
   AIUsageSummary,
   Channel,
   ChannelTestResult,
+  CrawlRunState,
   ExtractResult,
   GlobalFilterWords,
   HotlistOut,
@@ -99,6 +100,8 @@ export const api = {
   updateSub: (id: number, body: { name?: string; config?: Record<string, unknown>; enabled?: boolean }) =>
     request<Subscription>(`/subscriptions/${id}`, { method: 'PATCH', body }),
   deleteSub: (id: number) => request<void>(`/subscriptions/${id}`, { method: 'DELETE' }),
+  crawlNow: () => request<CrawlRunState>('/subscriptions/crawl', { method: 'POST' }),
+  crawlStatus: () => request<CrawlRunState>('/subscriptions/crawl/status'),
 
   // 调度
   getSchedule: () => request<Schedule>('/schedule'),

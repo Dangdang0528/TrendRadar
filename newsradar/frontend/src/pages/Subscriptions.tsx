@@ -118,6 +118,8 @@ export default function Subscriptions() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState<string>('')
+  const [crawling, setCrawling] = useState(false)
+  const [crawlElapsed, setCrawlElapsed] = useState(0)
 
   async function load() {
     try {
@@ -142,6 +144,74 @@ export default function Subscriptions() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── 手动抓取:触发后轮询状态,完成时刷新平台时间 ────────────
+  async function crawlNow() {
+    setErr('')
+    setOk('')
+    setCrawlElapsed(0)
+    try {
+      const st = await api.crawlNow()
+      setCrawling(st.running)
+    } catch (ex) {
+      fail(ex, '触发抓取失败')
+    }
+  }
+
+  useEffect(() => {
+    if (!crawling) return
+    let stopped = false
+    const startedAt = Date.now()
+
+    async function tick() {
+      let st
+      try {
+        st = await api.crawlStatus()
+      } catch (ex) {
+        if (!stopped) {
+          setCrawling(false)
+          fail(ex, '查询抓取状态失败')
+        }
+        return
+      }
+      if (stopped) return
+      if (st.running) {
+        setCrawlElapsed(Math.round((Date.now() - startedAt) / 1000))
+        return
+      }
+
+      setCrawling(false)
+      setCrawlElapsed(0)
+      if (st.error) {
+        setOk('')
+        setErr(`抓取失败:${st.error}`)
+        return
+      }
+      const r = st.result
+      if (r) {
+        flash(
+          `抓取完成:成功 ${r.platforms.length} 个平台` +
+            (r.failed.length ? `,失败 ${r.failed.length} 个(${r.failed.join('、')})` : '') +
+            `;共 ${r.fetched} 条,关键词命中 ${r.hotlist} 条,用时 ${r.elapsed_sec}s`,
+        )
+      }
+      // 刷新平台清单,更新各平台"最近更新"时间
+      try {
+        const p = await api.platforms()
+        setCatalog(p.platforms)
+      } catch {
+        /* 时间刷新失败不影响抓取结果提示 */
+      }
+    }
+
+    const timer = setInterval(tick, 2000)
+    tick()
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crawling])
 
   function flash(msg: string) {
     setErr('')
@@ -303,6 +373,23 @@ export default function Subscriptions() {
           多选热榜平台。不勾选任何平台 = 不限制,将抓取全部可用平台。
           下方时间是该平台最近一次抓到数据的时间。
         </p>
+
+        <div className="actions">
+          <button
+            className="btn btn--primary"
+            onClick={crawlNow}
+            disabled={crawling || busy === 'platforms'}
+          >
+            {crawling ? `抓取中… ${crawlElapsed}s` : '立即抓取'}
+          </button>
+          <span className="muted-note">
+            {crawling
+              ? '正在抓取各平台,请勿离开本页'
+              : platformDirty
+                ? '平台选择尚未保存,抓取将按已保存的选择执行'
+                : '按已保存的平台选择抓取一轮,约需数十秒'}
+          </span>
+        </div>
 
         {catalog.length === 0 ? (
           <p style={{ color: 'var(--muted)', fontSize: 13 }}>未读取到平台清单。</p>

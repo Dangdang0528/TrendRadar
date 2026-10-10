@@ -86,13 +86,17 @@ def test_crawl_and_filter_applies_keyword(monkeypatch):
             user = await pr._load_user_ctx(uid, s)
         return await pr.crawl_and_filter_for_user(user)
 
-    stats, rss = asyncio.run(_run())
+    outcome = asyncio.run(_run())
+    stats = outcome.stats
     titles = [t["title"] for g in stats for t in g["titles"]]
     assert stats, "stats 不应为空"
     assert "无关财经新闻" not in titles, f"关键词过滤失效: {titles}"
     assert any("标题A" in t for t in titles)
     # 每条都带 url(供正文抓取使用)
     assert all(t.get("url") for g in stats for t in g["titles"])
+    # 抓取摘要可用于前端展示
+    assert outcome.platforms == ["weibo"]
+    assert not outcome.failed
 
 
 def test_full_pipeline_end_to_end(monkeypatch):

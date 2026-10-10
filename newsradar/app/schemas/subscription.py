@@ -214,6 +214,28 @@ class PlatformSelection(BaseModel):
     platforms: list[str] = Field(default_factory=list)
 
 
+class CrawlRunResult(BaseModel):
+    """一次手动抓取的结果摘要"""
+
+    ok: bool
+    platforms: list[str] = Field(default_factory=list, description="抓取成功的平台 id")
+    failed: list[str] = Field(default_factory=list, description="抓取失败的平台 id")
+    fetched: int = 0
+    hotlist: int = 0
+    rss: int = 0
+    elapsed_sec: float = 0.0
+
+
+class CrawlRunState(BaseModel):
+    """手动抓取的状态(前端轮询)"""
+
+    running: bool = False
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result: CrawlRunResult | None = None
+    error: str | None = None
+
+
 class GlobalFilterWords(BaseModel):
     """全局过滤词列表(对应 frequency_words.txt 的 [GLOBAL_FILTER] 区域)"""
 

@@ -58,6 +58,26 @@ export interface GlobalFilterWords {
   words: string[]
 }
 
+/** 一次手动抓取的结果摘要 */
+export interface CrawlRunResult {
+  ok: boolean
+  platforms: string[]
+  failed: string[]
+  fetched: number
+  hotlist: number
+  rss: number
+  elapsed_sec: number
+}
+
+/** 手动抓取状态(前端轮询) */
+export interface CrawlRunState {
+  running: boolean
+  started_at: string | null
+  finished_at: string | null
+  result: CrawlRunResult | null
+  error: string | null
+}
+
 export type ReportMode = 'daily' | 'current' | 'incremental'
 
 export interface Schedule {

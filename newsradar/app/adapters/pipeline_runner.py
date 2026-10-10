@@ -11,6 +11,7 @@
 
 import asyncio
 import os
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -317,7 +318,18 @@ def _write_user_frequency_file(user: UserCtx) -> str:
     return path
 
 
-def _crawl_sync(user: UserCtx) -> tuple[list[dict], list[dict]]:
+@dataclass
+class CrawlOutcome:
+    """一次"抓取 + 关键词筛选"的产出"""
+
+    stats: list[dict] = field(default_factory=list)
+    rss_stats: list[dict] = field(default_factory=list)
+    platforms: list[str] = field(default_factory=list)  # 抓取成功的平台 id
+    failed: list[str] = field(default_factory=list)  # 抓取失败的平台 id
+    fetched: int = 0  # 本次抓到的去重条目数
+
+
+def _crawl_sync(user: UserCtx) -> CrawlOutcome:
     """同步抓取 + 筛选(供 asyncio.to_thread 调用)
 
     复用 trendradar 的 NewsAnalyzer 抓取/存储/统计方法,但不触发通知。
@@ -336,7 +348,7 @@ def _crawl_sync(user: UserCtx) -> tuple[list[dict], list[dict]]:
 
     try:
         # 1. 抓取热榜(写入 storage,供跨批次累积)
-        analyzer._crawl_data()
+        results, _id_to_name, failed_ids = analyzer._crawl_data()
         # 2. 抓取 RSS(未配置时内部直接返回空)
         rss_stats, _rss_new, _raw, _urls = analyzer._crawl_rss_data()
         # 3. 读取当天累积数据 → 关键词筛选 → stats
@@ -363,15 +375,21 @@ def _crawl_sync(user: UserCtx) -> tuple[list[dict], list[dict]]:
                 global_filters=global_filters,
                 quiet=True,
             )
-        return stats, (rss_stats or [])
+        return CrawlOutcome(
+            stats=stats,
+            rss_stats=list(rss_stats or []),
+            platforms=list(results.keys()),
+            failed=list(failed_ids),
+            fetched=sum(len(v) for v in results.values()),
+        )
     finally:
         if os.path.exists(freq_file):
             os.remove(freq_file)
         analyzer.ctx.cleanup()
 
 
-async def crawl_and_filter_for_user(user: UserCtx) -> tuple[list[dict], list[dict]]:
-    """抓取平台热榜 + RSS,并按用户关键词筛选,产出 (stats, rss_stats)。
+async def crawl_and_filter_for_user(user: UserCtx) -> CrawlOutcome:
+    """抓取平台热榜 + RSS,并按用户关键词筛选。
 
     复用 trendradar 的抓取/存储/统计能力(零上游改动)。抓取为阻塞 I/O,
     放到线程池执行;过程中临时切换工作目录以兼容 trendradar 的相对路径约定。
@@ -432,7 +450,8 @@ async def _run_pipeline(
 
     # 2. 抓取+筛选(如未注入 stats,则调用抓取阶段)
     if stats is None:
-        stats, rss_stats = await crawl_and_filter_for_user(user)
+        outcome = await crawl_and_filter_for_user(user)
+        stats, rss_stats = outcome.stats, outcome.rss_stats
     result["steps"]["crawl"] = {"hotlist": len(stats or []), "rss": len(rss_stats or [])}
 
     # 3. 正文级 AI 深度总结
