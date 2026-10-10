@@ -56,21 +56,25 @@ class ContentExtractor:
         self,
         urls: list[str],
         concurrency: int | None = None,
+        force: bool = False,
     ) -> dict[str, str]:
         """批量获取;返回 {url: 正文},无正文的 url 不在结果中。
 
         - 命中缓存的直接取,避免重复抓取
         - 未命中用信号量限并发,单篇失败不影响整体
+        - force=True 时跳过缓存读取(仍写回缓存),用于调试试抓最新效果
         """
         concurrency = concurrency or settings.CONTENT_EXTRACT_MAX_WORKERS
         sem = asyncio.Semaphore(concurrency)
 
         # 1. 一次性查缓存
-        async with self.session_factory() as session:
-            rows = await session.scalars(
-                select(ArticleContent).where(ArticleContent.url.in_(urls))
-            )
-            cached = {r.url: r.content for r in rows if r.content}
+        cached: dict[str, str] = {}
+        if not force:
+            async with self.session_factory() as session:
+                rows = await session.scalars(
+                    select(ArticleContent).where(ArticleContent.url.in_(urls))
+                )
+                cached = {r.url: r.content for r in rows if r.content}
 
         results = {u: c for u, c in cached.items()}
         to_fetch = [u for u in urls if u not in cached]

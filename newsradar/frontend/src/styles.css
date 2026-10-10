@@ -600,6 +600,44 @@ input::placeholder {
   margin-left: 4px;
 }
 
+/* ── 正文试抓结果 ───────────────────────────────────── */
+.result {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--surface-2);
+}
+.result + .result {
+  margin-top: 12px;
+}
+.result__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.result__url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+.result__body {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.75;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+}
+
 /* ── 登录页 ─────────────────────────────────────────── */
 .auth {
   min-height: 100vh;

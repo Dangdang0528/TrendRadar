@@ -4,6 +4,7 @@ import { useAuth } from './auth'
 import { Layout } from './components/Layout'
 import Channels from './pages/Channels'
 import Dashboard from './pages/Dashboard'
+import ExtractPreview from './pages/ExtractPreview'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import SchedulePage from './pages/SchedulePage'
@@ -31,6 +32,7 @@ export function App() {
         <Route path="schedule" element={<SchedulePage />} />
         <Route path="channels" element={<Channels />} />
         <Route path="usage" element={<Usage />} />
+        <Route path="extract" element={<ExtractPreview />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -4,7 +4,9 @@ import type {
   AIUsageSummary,
   Channel,
   ChannelTestResult,
+  ExtractResult,
   GlobalFilterWords,
+  HotlistOut,
   PlatformInfo,
   PlatformSelection,
   Schedule,
@@ -118,4 +120,12 @@ export const api = {
   ) => request<Channel>(`/channels/${id}`, { method: 'PATCH', body }),
   deleteChannel: (id: number) => request<void>(`/channels/${id}`, { method: 'DELETE' }),
   testChannel: (id: number) => request<ChannelTestResult>(`/channels/${id}/test`, { method: 'POST' }),
+
+  // 调试:正文试抓(仅后端 DEBUG 模式可用)
+  hotlist: (date?: string, limit = 15) =>
+    request<HotlistOut>(
+      `/debug/hotlist?limit=${limit}` + (date ? `&date=${encodeURIComponent(date)}` : ''),
+    ),
+  extract: (urls: string[], force = false) =>
+    request<ExtractResult>('/debug/extract', { method: 'POST', body: { urls, force } }),
 }

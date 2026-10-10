@@ -8,6 +8,7 @@ const NAV = [
   { to: '/schedule', label: '调度与 AI', icon: 'M12 8v4l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', end: false },
   { to: '/channels', label: '投递渠道', icon: 'M4 4h16v16H4zM4 9l8 5 8-5', end: false },
   { to: '/usage', label: 'AI 用量', icon: 'M4 19V5M4 19h16M8 19V9m4 10V13m4 6V7', end: false },
+  { to: '/extract', label: '试抓正文', icon: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4', end: false },
 ]
 
 function Glyph({ d }: { d: string }) {

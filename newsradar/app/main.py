@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, channels, health, schedule, subscriptions
+from app.api import auth, channels, debug, health, schedule, subscriptions
 from app.config import get_settings
 from app.db import Base, engine
 
@@ -59,6 +59,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(subscriptions.router, prefix="/api/v1")
 app.include_router(channels.router, prefix="/api/v1")
 app.include_router(schedule.router, prefix="/api/v1")
+app.include_router(debug.router, prefix="/api/v1")
 
 
 # ── 前端 SPA 托管(需先构建 frontend/dist)──────────────────────

@@ -97,3 +97,31 @@ export interface ChannelTestResult {
   channel: string
   sent_at: string
 }
+
+/** 调试:热榜条目(供试抓正文选源) */
+export interface HotlistItem {
+  title: string
+  url: string
+  source: string
+}
+
+export interface HotlistOut {
+  date: string
+  dates: string[]
+  items: HotlistItem[]
+}
+
+/** 调试:单个链接的正文试抓结果 */
+export interface ExtractItem {
+  url: string
+  ok: boolean
+  from_cache: boolean
+  length: number
+  content: string
+}
+
+export interface ExtractResult {
+  total: number
+  ok_count: number
+  results: ExtractItem[]
+}
