@@ -100,9 +100,47 @@ async def delete_subscription(db: AsyncSession, user_id: int, sub_id: int) -> bo
     return result.rowcount > 0
 
 
+def platform_last_updated() -> dict[str, str]:
+    """各平台最近一次抓到数据的时间,返回 {platform_id: "YYYY-MM-DD HH:MM"}
+
+    trendradar 按抓取日期分库(output/news/<日期>.db),库里 last_crawl_time
+    只存 "HH-MM"。因此从新到旧扫描各天的库,每个平台取首个命中库里的最新时间。
+    """
+    import glob
+    import os
+    import sqlite3
+
+    from app.config import get_settings
+
+    pattern = os.path.join(
+        get_settings().TRENDRADAR_WORK_DIR, "output", "news", "*.db"
+    )
+    result: dict[str, str] = {}
+    for path in sorted(glob.glob(pattern), reverse=True):
+        date = os.path.basename(path).removesuffix(".db")
+        try:
+            # 只读打开,避免改动抓取库文件
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                rows = conn.execute(
+                    "select platform_id, max(last_crawl_time) from news_items "
+                    "where last_crawl_time is not null and last_crawl_time <> '' "
+                    "group by platform_id"
+                ).fetchall()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            # 单个库损坏/结构不符时跳过,不影响平台清单
+            continue
+        for pid, latest in rows:
+            result.setdefault(pid, f"{date} {str(latest).replace('-', ':', 1)}")
+    return result
+
+
 def list_trendradar_platforms() -> list[dict[str, Any]]:
-    """列出 trendradar 内置平台清单,供前端勾选"""
-    return load_platform_catalog()
+    """列出 trendradar 内置平台清单 + 各平台最近更新时间,供前端勾选"""
+    updated = platform_last_updated()
+    return [{**p, "last_updated": updated.get(p["id"])} for p in load_platform_catalog()]
 
 
 async def replace_platforms(

@@ -451,7 +451,7 @@ input::placeholder {
 /* ── 平台多选 ───────────────────────────────────────── */
 .check-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 8px;
   margin-bottom: 16px;
 }
@@ -478,7 +478,22 @@ input::placeholder {
   flex: none;
   accent-color: var(--accent);
 }
+.check__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.check__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 .check__name {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -486,7 +501,17 @@ input::placeholder {
   text-overflow: ellipsis;
 }
 .check__id {
-  margin-left: auto;
+  /* id 独占第二行,避免与时间戳争宽度被截断 */
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.check__time {
+  flex: none;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted);

@@ -44,6 +44,8 @@ export interface PlatformInfo {
   id: string
   name: string
   enabled: boolean
+  /** 该平台最近一次抓到数据的时间;从未抓到为 null */
+  last_updated: string | null
 }
 
 /** 平台多选结果;空列表表示"不限制",即抓取全部平台 */

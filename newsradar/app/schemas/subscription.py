@@ -197,6 +197,8 @@ class PlatformInfo(BaseModel):
     id: str
     name: str
     enabled: bool = True
+    # 该平台最近一次抓到数据的时间("YYYY-MM-DD HH:MM");从未抓到为 None
+    last_updated: str | None = None
 
 
 class PlatformList(BaseModel):

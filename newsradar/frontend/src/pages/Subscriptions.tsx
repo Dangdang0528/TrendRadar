@@ -301,6 +301,7 @@ export default function Subscriptions() {
         <h3 className="card__title">来源平台</h3>
         <p className="card__hint">
           多选热榜平台。不勾选任何平台 = 不限制,将抓取全部可用平台。
+          下方时间是该平台最近一次抓到数据的时间。
         </p>
 
         {catalog.length === 0 ? (
@@ -312,8 +313,15 @@ export default function Subscriptions() {
               return (
                 <label key={p.id} className={'check' + (on ? ' is-on' : '')}>
                   <input type="checkbox" checked={on} onChange={() => togglePlatform(p.id)} />
-                  <span className="check__name">{p.name}</span>
-                  <code className="check__id">{p.id}</code>
+                  <span className="check__body">
+                    <span className="check__row">
+                      <span className="check__name">{p.name}</span>
+                      <span className="check__time" title={p.last_updated || '暂无抓取记录'}>
+                        {p.last_updated || '暂无数据'}
+                      </span>
+                    </span>
+                    <code className="check__id">{p.id}</code>
+                  </span>
                 </label>
               )
             })}

@@ -1,6 +1,8 @@
 # coding=utf-8
 """订阅路由"""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.deps import CurrentUser, DbSession
@@ -21,8 +23,9 @@ router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 @router.get("/platforms", response_model=PlatformList)
 async def list_platforms():
-    """列出 trendradar 内置平台清单,供前端勾选"""
-    items = subscription_service.list_trendradar_platforms()
+    """列出 trendradar 内置平台清单(含各平台最近更新时间),供前端勾选"""
+    # 扫描抓取库属于阻塞 I/O,放线程池执行
+    items = await asyncio.to_thread(subscription_service.list_trendradar_platforms)
     return PlatformList(platforms=[PlatformInfo(**p) for p in items])
 
 
